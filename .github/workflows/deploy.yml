@@ -1,0 +1,270 @@
+name: 'Terraform AWS Deploy'
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "models/**"
+      - "*.tf"
+      - ".github/workflows/**"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "models/**"
+      - "*.tf"
+      - ".github/workflows/**"
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write # Requerido para comentarios de Infracost en PRs
+
+jobs:
+  plan:
+    name: 'Terraform Plan + SonarCloud Scan + Infracost'
+    runs-on: ubuntu-latest
+
+    outputs:
+      plan_exitcode: ${{ steps.plan.outcome }}
+
+    steps:
+      - name: Checkout del código
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+
+      - name: Configurar credenciales de AWS (OIDC)
+        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502
+        with:
+          role-to-assume: "${{ secrets.AWS_ROLE_ARN }}"
+          aws-region: "${{ secrets.AWS_REGION }}"
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd
+        with:
+          terraform_version: "1.11.0"
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@90f302c255ef959cbfb4bd10581afecdb7ece3e6
+        with:
+          tflint_version: v0.55.0
+
+      - name: Inicializar TFLint
+        run: tflint --init
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Ejecutar TFLint
+        if: always()
+        run: |
+          tflint -f compact | tee tflint-report.txt
+
+      - name: Setup Infracost
+        uses: infracost/actions/setup@d5dd739fb5eae81f31bf09fea5c290186a91964a
+        with:
+          api-key: ${{ secrets.INFRACOST_API_KEY }}
+
+      - name: Generar estimación de costos (Infracost)
+        run: |
+          infracost breakdown --path=. \
+                              --format=json \
+                              --out-file=infracost-report.json
+          infracost breakdown --path=. \
+                              --format=table \
+                              --out-file=infracost-report.txt
+
+      - name: Comentar Infracost en PR (si aplica)
+        if: github.event_name == 'pull_request'
+        run: |
+          infracost comment github --path=infracost-report.json \
+                            --repo="$GITHUB_REPOSITORY" \
+                            --github-token="${{ github.token }}" \
+                            --pull-request="${{ github.event.pull_request.number }}" \
+                            --behavior=update
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Checkov - Escaneo de seguridad de Terraform
+        id: checkov
+        uses: bridgecrewio/checkov-action@dfb51aed1b783289b0d3f255028e7a88d5e8caa1
+        with:
+          directory: .
+          framework: terraform
+          output_format: cli,json
+          output_file_path: checkov-report.txt,checkov-report.json
+          soft_fail: true
+          hard_fail_on: CKV_AWS_79
+          skip_check: CKV_AWS_88,CKV_AWS_130,CKV_AWS_260,CKV_AWS_24,CKV_AWS_273
+          download_external_modules: true
+        env:
+          PRISMA_API_URL: https://api.prismacloud.io
+
+      - name: Subir reporte de Checkov
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: checkov-report
+          path: |
+            checkov-report.txt
+            checkov-report.json
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Terraform Plan
+        id: plan
+        if: always()
+        run: |
+          set -o pipefail
+          terraform plan -out=tfplan -no-color | tee plan_output.txt
+        env:
+          TF_VAR_aws_region: "${{ secrets.AWS_REGION }}"
+          TF_VAR_environment: "dev"
+          TF_VAR_project_name: "sirius"
+
+      - name: Guardar plan como artifact
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: tfplan
+          path: |
+            tfplan
+            plan_output.txt
+          if-no-files-found: warn
+
+      - name: SonarCloud Scan
+        if: always()
+        uses: SonarSource/sonarqube-scan-action@689fb39b34b9aa95ebc5f8f119343ddd51542402
+        with:
+          projectBaseDir: .
+          args: >
+            -Dsonar.projectKey=lopezzuluagaj3-collab_pipeline-sirius-tlc
+            -Dsonar.organization=lopezzuluagaj3-collab
+            -Dsonar.qualitygate.wait=false
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: https://sonarcloud.io
+
+      - name: Consultar Quality Gate de SonarCloud
+        if: always()
+        working-directory: .
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          set -e
+          TASK_FILE=".scannerwork/report-task.txt"
+
+          if [ ! -f "$TASK_FILE" ]; then
+            echo "No se encontró report-task.txt — el scan pudo haber fallado." | tee sonar_result.txt
+            exit 0
+          fi
+
+          CE_TASK_URL=$(grep "ceTaskUrl=" "$TASK_FILE" | cut -d'=' -f2-)
+          PROJECT_KEY=$(grep "projectKey=" "$TASK_FILE" | cut -d'=' -f2-)
+
+          echo "Esperando que el procesamiento del background task finalice en SonarCloud..."
+          STATUS="PENDING"
+          for i in $(seq 1 30); do
+            RESPONSE=$(curl -s -u "${SONAR_TOKEN}:" "$CE_TASK_URL")
+            STATUS=$(echo "$RESPONSE" | jq -r '.task.status')
+            echo "Estado de la tarea: $STATUS"
+            if [ "$STATUS" = "SUCCESS" ] || [ "$STATUS" = "FAILED" ] || [ "$STATUS" = "CANCELED" ]; then
+              break
+            fi
+            sleep 5
+          done
+
+          if [ "$STATUS" != "SUCCESS" ]; then
+            echo "El análisis no terminó correctamente en el servidor (estado: $STATUS)" | tee sonar_result.txt
+            exit 0
+          fi
+
+          ANALYSIS_ID=$(echo "$RESPONSE" | jq -r '.task.analysisId')
+          sleep 3
+
+          QG_RESPONSE=$(curl -s -u "${SONAR_TOKEN}:" "https://sonarcloud.io/api/qualitygates/project_status?analysisId=$ANALYSIS_ID")
+          QG_STATUS=$(echo "$QG_RESPONSE" | jq -r '.projectStatus.status')
+
+          {
+            echo "=== Resultado SonarCloud ==="
+            echo "Quality Gate: $QG_STATUS"
+            echo ""
+            echo "Condiciones evaluadas:"
+            echo "$QG_RESPONSE" | jq -r '.projectStatus.conditions[]? | "- \(.metricKey): \(.status) (actual: \(.actualValue // "N/A"), umbral: \(.errorThreshold // "N/A"))"'
+            echo ""
+            echo "Ver detalle completo: https://sonarcloud.io/dashboard?id=${PROJECT_KEY}"
+          } | tee sonar_result.txt
+
+      - name: Asegurar que existan los reportes antes de adjuntar
+        if: always()
+        run: |
+          for f in plan_output.txt sonar_result.txt checkov-report.txt checkov-report.json infracost-report.txt tflint-report.txt; do
+            [ -f "$f" ] || touch "$f"
+          done
+
+      - name: Enviar correo con resultado del plan, SonarCloud, Checkov e Infracost
+        if: always()
+        uses: dawidd6/action-send-mail@4226df7daafa6fc901a43789c49bf7ab309066e7
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.SMTP_USERNAME }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+          subject: "Terraform Plan + SonarCloud + Checkov + Infracost - Sirius"
+          to: ${{ secrets.NOTIFY_EMAIL }}
+          from: "CI Sirius <${{ secrets.SMTP_USERNAME }}>"
+          body: "Se generó el análisis de Terraform para Sirius. Revisa los adjuntos para ver el plan, reporte de seguridad, calidad de código y estimación de costos de infraestructura."
+          attachments: |
+            plan_output.txt
+            sonar_result.txt
+            checkov-report.txt
+            checkov-report.json
+            infracost-report.txt
+            tflint-report.txt
+
+  apply:
+    name: 'Terraform Apply (requiere aprobación manual)'
+    needs: plan
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Checkout del código
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Configurar credenciales de AWS (OIDC)
+        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502
+        with:
+          role-to-assume: "${{ secrets.AWS_ROLE_ARN }}"
+          aws-region: "${{ secrets.AWS_REGION }}"
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd
+        with:
+          terraform_version: "1.11.0"
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Descargar plan guardado
+        uses: actions/download-artifact@bf8f7d968aaaabcfa201d1db7d5cbd8f3d68400a
+        with:
+          name: tfplan
+
+      - name: Terraform Apply
+        run: terraform apply tfplan
+        env:
+          TF_VAR_aws_region: "${{ secrets.AWS_REGION }}"
+          TF_VAR_environment: "dev"
+          TF_VAR_project_name: "sirius"
