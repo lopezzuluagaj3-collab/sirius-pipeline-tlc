@@ -62,3 +62,8 @@ output "disparo_mensual_rule_arn" {
   description = "ARN de la regla mensual de EventBridge"
   value       = module.eventbridge.disparo_mensual_rule_arn
 }
+
+output "github_actions_role_arn" {
+  description = "ARN del rol IAM para GitHub Actions OIDC"
+  value       = module.iam.github_actions_role_arn
+}

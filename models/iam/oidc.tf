@@ -1,41 +1,22 @@
 # ==========================================
-# 1. Proveedor OIDC único de GitHub
+# Proveedor OIDC existente de GitHub
 # ==========================================
-resource "aws_iam_openid_connect_provider" "github" {
-  url            = "https://token.actions.githubusercontent.com"
-  client_id_list = ["sts.amazonaws.com"]
-  thumbprint_list = [
-    "6938fd4d98bab03faadb97b34396831e3780aea1",
-    "1c58a3a8518e8759bf075b76b750d4f2df264fcd"
-  ]
+data "aws_iam_openid_connect_provider" "github" {
+  url = "https://token.actions.githubusercontent.com"
 }
 
 # ==========================================
-# 2. Listado de repositorios y políticas de AWS
-# ==========================================
-locals {
-  github_org = "lopezzuluagaj3-collab"
-
-  github_repos = {
-    "pipeline-sirius-tlc"        = "arn:aws:iam::aws:policy/AmazonVPCFullAccess"
-    "matchiq_infrastructure_aws" = "arn:aws:iam::aws:policy/AmazonS3FullAccess"
-  }
-}
-
-# ==========================================
-# 3. Creación dinámica de Roles de IAM
+# Rol de IAM para GitHub Actions OIDC
 # ==========================================
 resource "aws_iam_role" "github_actions" {
-  for_each = local.github_repos
-
-  name = "github-actions-${each.key}-role"
+  name = "github-actions-${var.github_repo}-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
         Effect    = "Allow"
-        Principal = { Federated = aws_iam_openid_connect_provider.github.arn }
+        Principal = { Federated = data.aws_iam_openid_connect_provider.github.arn }
         Action = [
           "sts:AssumeRoleWithWebIdentity",
           "sts:TagSession"
@@ -45,7 +26,7 @@ resource "aws_iam_role" "github_actions" {
             "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
           }
           StringLike = {
-            "token.actions.githubusercontent.com:sub" = "repo:${local.github_org}*/${each.key}*:*"
+            "token.actions.githubusercontent.com:sub" = "repo:${var.github_org}*/${var.github_repo}*:*"
           }
         }
       }
@@ -53,32 +34,23 @@ resource "aws_iam_role" "github_actions" {
   })
 }
 
-# ==========================================
-# 4. Asignación de permisos específicos a cada Rol
-# ==========================================
-resource "aws_iam_role_policy_attachment" "github_attachments" {
-  for_each   = local.github_repos
-  role       = aws_iam_role.github_actions[each.key].name
-  policy_arn = each.value
+resource "aws_iam_role_policy_attachment" "github_vpc_access" {
+  role       = aws_iam_role.github_actions.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonVPCFullAccess"
 }
 
 # ==========================================
-# 5. Outputs para usar en tus pipelines de GitHub
+# Política de despliegue para Terraform
 # ==========================================
-output "roles_creados" {
-  value       = { for k, v in aws_iam_role.github_actions : k => v.arn }
-  description = "ARNs de los roles creados. Cópialos en los respectivos flujos de GitHub Actions."
-}
-
 resource "aws_iam_policy" "sirius_terraform_deploy" {
-  name        = "sirius-terraform-deploy-policy"
-  description = "Permisos mínimos para que Terraform gestione la infraestructura de Sirius"
+  name        = "${var.project_name}-terraform-deploy-policy"
+  description = "Permisos mínimos para que Terraform gestione la infraestructura de ${var.project_name}"
 
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
 
-      # --- S3: buckets del proyecto (raw, staging, mart, athena-results) ---
+      # --- S3: buckets del proyecto (row, logs, etc.) ---
       {
         Sid    = "S3BucketLevel"
         Effect = "Allow"
@@ -120,7 +92,7 @@ resource "aws_iam_policy" "sirius_terraform_deploy" {
           "s3:CreateBucket",
           "s3:DeleteBucket"
         ]
-        Resource = "arn:aws:s3:::sirius-*"
+        Resource = "arn:aws:s3:::${var.project_name}-*"
       },
       {
         Sid    = "S3ObjectLevel"
@@ -132,7 +104,7 @@ resource "aws_iam_policy" "sirius_terraform_deploy" {
           "s3:GetObjectTagging",
           "s3:PutObjectTagging"
         ]
-        Resource = "arn:aws:s3:::sirius-*/*"
+        Resource = "arn:aws:s3:::${var.project_name}-*/*"
       },
 
       # --- SQS: colas del proyecto ---
@@ -148,10 +120,9 @@ resource "aws_iam_policy" "sirius_terraform_deploy" {
           "sqs:TagQueue",
           "sqs:ListQueueTags"
         ]
-        Resource = "arn:aws:sqs:us-east-2:603437461408:sirius-*"
+        Resource = "arn:aws:sqs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:${var.project_name}-*"
       },
 
-      # --- Lambda: funciones del proyecto ---
       # --- Lambda: funciones del proyecto ---
       {
         Sid    = "LambdaAccess"
@@ -171,10 +142,10 @@ resource "aws_iam_policy" "sirius_terraform_deploy" {
           "lambda:ListVersionsByFunction",
           "lambda:GetFunctionCodeSigningConfig"
         ]
-        Resource = "arn:aws:lambda:us-east-2:603437461408:function:sirius-*"
+        Resource = "arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:function:${var.project_name}-*"
       },
 
-      # --- Lambda: event source mappings (ARN con ID generado, no se puede acotar por nombre) ---
+      # --- Lambda: event source mappings ---
       {
         Sid    = "LambdaEventSourceMappings"
         Effect = "Allow"
@@ -183,10 +154,17 @@ resource "aws_iam_policy" "sirius_terraform_deploy" {
           "lambda:DeleteEventSourceMapping",
           "lambda:GetEventSourceMapping",
           "lambda:UpdateEventSourceMapping",
-          "lambda:ListEventSourceMappings",
           "lambda:ListTags"
         ]
-        Resource = "*"
+        Resource = "arn:aws:lambda:${var.aws_region}:${data.aws_caller_identity.current.account_id}:event-source-mapping:*"
+      },
+      {
+        Sid    = "LambdaListEventSourceMappings"
+        Effect = "Allow"
+        Action = [
+          "lambda:ListEventSourceMappings"
+        ]
+        Resource = "*" # NOSONAR
       },
 
       # --- EventBridge: reglas del proyecto ---
@@ -204,61 +182,10 @@ resource "aws_iam_policy" "sirius_terraform_deploy" {
           "events:UntagResource",
           "events:ListTagsForResource"
         ]
-        Resource = "arn:aws:events:us-east-2:603437461408:rule/sirius-*"
+        Resource = "arn:aws:events:${var.aws_region}:${data.aws_caller_identity.current.account_id}:rule/${var.project_name}-*"
       },
 
-      # --- Glue: databases, tablas y jobs del proyecto ---
-      {
-        Sid    = "GlueAccess"
-        Effect = "Allow"
-        Action = [
-          "glue:CreateDatabase",
-          "glue:DeleteDatabase",
-          "glue:GetDatabase",
-          "glue:UpdateDatabase",
-          "glue:CreateTable",
-          "glue:DeleteTable",
-          "glue:GetTable",
-          "glue:GetTables",
-          "glue:UpdateTable",
-          "glue:BatchCreatePartition",
-          "glue:BatchDeletePartition",
-          "glue:GetPartition",
-          "glue:GetPartitions",
-          "glue:CreateJob",
-          "glue:DeleteJob",
-          "glue:GetJob",
-          "glue:UpdateJob",
-          "glue:TagResource",
-          "glue:UntagResource",
-          "glue:GetTags"
-        ]
-        Resource = [
-          "arn:aws:glue:us-east-2:603437461408:catalog",
-          "arn:aws:glue:us-east-2:603437461408:database/sirius_*",
-          "arn:aws:glue:us-east-2:603437461408:table/sirius_*/*",
-          "arn:aws:glue:us-east-2:603437461408:job/sirius-*"
-        ]
-      },
-
-      # --- Athena: workgroup y queries ---
-      {
-        Sid    = "AthenaAccess"
-        Effect = "Allow"
-        Action = [
-          "athena:StartQueryExecution",
-          "athena:GetQueryExecution",
-          "athena:GetQueryResults",
-          "athena:StopQueryExecution",
-          "athena:GetWorkGroup",
-          "athena:CreateWorkGroup",
-          "athena:UpdateWorkGroup",
-          "athena:DeleteWorkGroup"
-        ]
-        Resource = "*"
-      },
-
-      # --- IAM: solo roles/políticas propios del proyecto, con PassRole acotado ---
+      # --- IAM: roles y políticas del proyecto ---
       {
         Sid    = "IAMRoleManagement"
         Effect = "Allow"
@@ -277,24 +204,21 @@ resource "aws_iam_policy" "sirius_terraform_deploy" {
           "iam:ListRolePolicies",
           "iam:ListAttachedRolePolicies"
         ]
-        Resource = "arn:aws:iam::603437461408:role/sirius-*"
+        Resource = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.project_name}-*"
       },
       {
         Sid      = "IAMPassRoleScoped"
         Effect   = "Allow"
         Action   = "iam:PassRole"
-        Resource = "arn:aws:iam::603437461408:role/sirius-*"
+        Resource = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.project_name}-*"
         Condition = {
           StringEquals = {
             "iam:PassedToService" = [
-              "lambda.amazonaws.com",
-              "glue.amazonaws.com"
+              "lambda.amazonaws.com"
             ]
           }
         }
       },
-
-      # --- IAM: gestión de la propia política de Terraform ---
       {
         Sid    = "IAMPolicySelfManagement"
         Effect = "Allow"
@@ -310,10 +234,8 @@ resource "aws_iam_policy" "sirius_terraform_deploy" {
           "iam:UntagPolicy",
           "iam:ListEntitiesForPolicy"
         ]
-        Resource = "arn:aws:iam::603437461408:policy/sirius-*"
+        Resource = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/${var.project_name}-*"
       },
-
-      # --- IAM: proveedor OIDC de GitHub (recurso único, no sigue el patrón sirius-*) ---
       {
         Sid    = "IAMOIDCProvider"
         Effect = "Allow"
@@ -326,10 +248,8 @@ resource "aws_iam_policy" "sirius_terraform_deploy" {
           "iam:UntagOpenIDConnectProvider",
           "iam:ListOpenIDConnectProviderTags"
         ]
-        Resource = "arn:aws:iam::603437461408:oidc-provider/token.actions.githubusercontent.com"
+        Resource = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:oidc-provider/token.actions.githubusercontent.com"
       },
-
-      # --- IAM: los propios roles de GitHub Actions (OIDC), gestionados por Terraform ---
       {
         Sid    = "IAMGitHubActionsRoles"
         Effect = "Allow"
@@ -338,7 +258,7 @@ resource "aws_iam_policy" "sirius_terraform_deploy" {
           "iam:ListAttachedRolePolicies",
           "iam:ListRolePolicies"
         ]
-        Resource = "arn:aws:iam::603437461408:role/github-actions-*-role"
+        Resource = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/github-actions-*-role"
       },
 
       # --- Backend de Terraform: bucket de state ---
@@ -346,7 +266,7 @@ resource "aws_iam_policy" "sirius_terraform_deploy" {
         Sid      = "TerraformStateList"
         Effect   = "Allow"
         Action   = ["s3:ListBucket"]
-        Resource = "arn:aws:s3:::sirius-tfstate-603437461408"
+        Resource = "arn:aws:s3:::${var.tfstate_bucket_name}"
       },
       {
         Sid    = "TerraformStateObject"
@@ -356,13 +276,13 @@ resource "aws_iam_policy" "sirius_terraform_deploy" {
           "s3:PutObject",
           "s3:DeleteObject"
         ]
-        Resource = "arn:aws:s3:::sirius-tfstate-603437461408/*"
+        Resource = "arn:aws:s3:::${var.tfstate_bucket_name}/*"
       }
     ]
   })
 }
 
 resource "aws_iam_role_policy_attachment" "sirius_terraform_deploy" {
-  role       = aws_iam_role.github_actions["pipeline-sirius-tlc"].name
+  role       = aws_iam_role.github_actions.name
   policy_arn = aws_iam_policy.sirius_terraform_deploy.arn
 }

@@ -140,6 +140,7 @@ jobs:
           path: |
             tfplan
             plan_output.txt
+            models/lambda/*.zip
           if-no-files-found: warn
 
       - name: SonarCloud Scan
@@ -148,7 +149,7 @@ jobs:
         with:
           projectBaseDir: .
           args: >
-            -Dsonar.projectKey=lopezzuluagaj3-collab_pipeline-sirius-tlc
+            -Dsonar.projectKey=lopezzuluagaj3-collab_sirius-pipeline-tlc
             -Dsonar.organization=lopezzuluagaj3-collab
             -Dsonar.qualitygate.wait=false
         env:
@@ -261,6 +262,16 @@ jobs:
         uses: actions/download-artifact@bf8f7d968aaaabcfa201d1db7d5cbd8f3d68400a
         with:
           name: tfplan
+
+      - name: Asegurar paquetes ZIP de Lambda para Apply
+        run: |
+          mkdir -p models/lambda
+          if [ ! -f models/lambda/detectora.zip ]; then
+            cd models/lambda/lambda_src/detectora && zip -r ../../detectora.zip . && cd ../../..
+          fi
+          if [ ! -f models/lambda/descarga.zip ]; then
+            cd models/lambda/lambda_src/descarga && zip -r ../../descarga.zip . && cd ../../..
+          fi
 
       - name: Terraform Apply
         run: terraform apply tfplan
