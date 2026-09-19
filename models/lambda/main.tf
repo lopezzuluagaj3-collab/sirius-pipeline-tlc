@@ -56,13 +56,19 @@ resource "aws_lambda_function" "descarga" {
 
   environment {
     variables = {
-      ROW_BUCKET = var.row_bucket_name
+      ROW_BUCKET    = var.row_bucket_name
+      GLUE_JOB_NAME = var.glue_job_name
     }
   }
 }
+
 
 resource "aws_lambda_event_source_mapping" "periodos_faltantes" {
   event_source_arn = var.periodos_faltantes_queue_arn
   function_name    = aws_lambda_function.descarga.arn
   batch_size       = 1
+
+  scaling_config {
+    maximum_concurrency = 5
+  }
 }

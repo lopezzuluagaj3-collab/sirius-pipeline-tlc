@@ -67,3 +67,39 @@ output "github_actions_role_arn" {
   description = "ARN del rol IAM para GitHub Actions OIDC"
   value       = module.iam.github_actions_role_arn
 }
+
+output "mart_bucket_name" {
+  description = "Nombre del bucket S3 de la zona mart"
+  value       = module.s3.mart_bucket_name
+}
+
+output "mart_bucket_arn" {
+  description = "ARN del bucket S3 de la zona mart"
+  value       = module.s3.mart_bucket_arn
+}
+
+output "glue_database_name" {
+  description = "Nombre de la base de datos de Glue Catalog en la capa row"
+  value       = module.athena.database_name
+}
+
+output "athena_workgroup_name" {
+  description = "Nombre del Workgroup de Athena para EDA"
+  value       = module.athena.workgroup_name
+}
+
+output "staging_bucket_name" {
+  description = "Nombre del bucket S3 de la zona staging"
+  value       = module.s3.staging_bucket_name
+}
+
+output "staging_bucket_arn" {
+  description = "ARN del bucket S3 de la zona staging"
+  value       = module.s3.staging_bucket_arn
+}
+
+output "glue_job_name" {
+  description = "Nombre del AWS Glue Job de limpieza"
+  value       = module.glue.glue_job_name
+}
+

@@ -6,7 +6,7 @@ resource "aws_sqs_queue" "periodos_faltantes_dlq" {
 
 resource "aws_sqs_queue" "periodos_faltantes" {
   name                       = "${var.project_name}-periodos-faltantes"
-  visibility_timeout_seconds = var.lambda_descarga_timeout * 6
+  visibility_timeout_seconds = var.lambda_descarga_timeout * 2
   message_retention_seconds  = 345600 # 4 dias
   sqs_managed_sse_enabled    = true
 
