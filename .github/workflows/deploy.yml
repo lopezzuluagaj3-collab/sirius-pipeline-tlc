@@ -236,6 +236,7 @@ jobs:
   apply:
     name: 'Terraform Apply (requiere aprobación manual)'
     needs: plan
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     environment: production
 
