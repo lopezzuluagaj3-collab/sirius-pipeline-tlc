@@ -11,7 +11,7 @@ resource "aws_athena_workgroup" "eda" {
   state       = "ENABLED"
 
   configuration {
-    enforce_workgroup_configuration    = true
+    enforce_workgroup_configuration    = false
     publish_cloudwatch_metrics_enabled = true
 
     result_configuration {
@@ -863,3 +863,112 @@ resource "aws_glue_catalog_table" "staging_fhv" {
     }
   }
 }
+
+# -------------------------------------------------------------
+# Tabla Dimensional Staging: TLC Taxi Zones Lookup
+# -------------------------------------------------------------
+resource "aws_glue_catalog_table" "taxi_zone_lookup" {
+  name          = "taxi_zone_lookup"
+  database_name = aws_glue_catalog_database.staging.name
+  table_type    = "EXTERNAL_TABLE"
+
+  parameters = {
+    "EXTERNAL"               = "TRUE"
+    "classification"         = "csv"
+    "skip.header.line.count" = "1"
+  }
+
+  storage_descriptor {
+    location      = "s3://${var.staging_bucket_name}/lookup/"
+    input_format  = "org.apache.hadoop.mapred.TextInputFormat"
+    output_format = "org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat"
+
+    ser_de_info {
+      name                  = "csv-serde"
+      serialization_library = "org.apache.hadoop.hive.serde2.OpenCSVSerde"
+      parameters = {
+        "separatorChar" = ","
+        "quoteChar"     = "\""
+      }
+    }
+
+    columns {
+      name = "locationid"
+      type = "string"
+    }
+    columns {
+      name = "borough"
+      type = "string"
+    }
+    columns {
+      name = "zone"
+      type = "string"
+    }
+    columns {
+      name = "service_zone"
+      type = "string"
+    }
+  }
+}
+
+# =============================================================
+# CAPA MART (GOLD): BASE DE DATOS Y NAMED QUERIES DE ATHENA
+# =============================================================
+
+resource "aws_glue_catalog_database" "mart" {
+  name        = "${var.project_name}_mart_db"
+  description = "Base de datos de metadatos para la capa Mart (Gold) de NYC TLC"
+}
+
+resource "aws_athena_named_query" "mart_cuota_mercado_mensual" {
+  name        = "mart_cuota_mercado_mensual"
+  workgroup   = aws_athena_workgroup.eda.name
+  database    = aws_glue_catalog_database.staging.name
+  description = "CTAS para generar Mart 1: Cuota de mercado mensual (2009-2026)"
+
+  query = templatefile("${path.module}/sql/mart/mart_cuota_mercado_mensual.sql", {
+    staging_db  = aws_glue_catalog_database.staging.name
+    mart_db     = aws_glue_catalog_database.mart.name
+    mart_bucket = var.mart_bucket_name
+  })
+}
+
+resource "aws_athena_named_query" "mart_kpis_financieros" {
+  name        = "mart_kpis_financieros"
+  workgroup   = aws_athena_workgroup.eda.name
+  database    = aws_glue_catalog_database.staging.name
+  description = "CTAS para generar Mart 2: KPIs financieros y tarifas"
+
+  query = templatefile("${path.module}/sql/mart/mart_kpis_financieros.sql", {
+    staging_db  = aws_glue_catalog_database.staging.name
+    mart_db     = aws_glue_catalog_database.mart.name
+    mart_bucket = var.mart_bucket_name
+  })
+}
+
+resource "aws_athena_named_query" "mart_demanda_territorial" {
+  name        = "mart_demanda_territorial"
+  workgroup   = aws_athena_workgroup.eda.name
+  database    = aws_glue_catalog_database.staging.name
+  description = "CTAS para generar Mart 3: Demanda territorial y flujos de movilidad"
+
+  query = templatefile("${path.module}/sql/mart/mart_demanda_territorial.sql", {
+    staging_db  = aws_glue_catalog_database.staging.name
+    mart_db     = aws_glue_catalog_database.mart.name
+    mart_bucket = var.mart_bucket_name
+  })
+}
+
+resource "aws_athena_named_query" "mart_patrones_temporales" {
+  name        = "mart_patrones_temporales"
+  workgroup   = aws_athena_workgroup.eda.name
+  database    = aws_glue_catalog_database.staging.name
+  description = "CTAS para generar Mart 4: Patrones temporales y horas pico"
+
+  query = templatefile("${path.module}/sql/mart/mart_patrones_temporales.sql", {
+    staging_db  = aws_glue_catalog_database.staging.name
+    mart_db     = aws_glue_catalog_database.mart.name
+    mart_bucket = var.mart_bucket_name
+  })
+}
+
