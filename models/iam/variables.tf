@@ -35,3 +35,10 @@ variable "tfstate_bucket_name" {
   type        = string
   default     = "sirius-tfstate-603437461408"
 }
+
+variable "glue_job_arn" {
+  description = "ARN del AWS Glue Job que puede disparar la Lambda de descarga"
+  type        = string
+  default     = ""
+}
+

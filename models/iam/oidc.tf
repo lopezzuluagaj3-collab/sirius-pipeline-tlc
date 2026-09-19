@@ -42,6 +42,11 @@ resource "aws_iam_role_policy_attachment" "github_vpc_access" {
 # ==========================================
 # Política de despliegue para Terraform
 # ==========================================
+import {
+  to = aws_iam_policy.sirius_terraform_deploy
+  id = "arn:aws:iam::603437461408:policy/sirius-terraform-deploy-policy"
+}
+
 resource "aws_iam_policy" "sirius_terraform_deploy" {
   name        = "${var.project_name}-terraform-deploy-policy"
   description = "Permisos mínimos para que Terraform gestione la infraestructura de ${var.project_name}"
@@ -277,6 +282,59 @@ resource "aws_iam_policy" "sirius_terraform_deploy" {
           "s3:DeleteObject"
         ]
         Resource = "arn:aws:s3:::${var.tfstate_bucket_name}/*"
+      },
+
+      # --- Glue Data Catalog ---
+      {
+        Sid    = "GlueCatalogManagement"
+        Effect = "Allow"
+        Action = [
+          "glue:CreateDatabase",
+          "glue:GetDatabase",
+          "glue:GetDatabases",
+          "glue:UpdateDatabase",
+          "glue:DeleteDatabase",
+          "glue:CreateTable",
+          "glue:UpdateTable",
+          "glue:GetTable",
+          "glue:GetTables",
+          "glue:DeleteTable",
+          "glue:BatchCreatePartition",
+          "glue:BatchGetPartition",
+          "glue:GetPartition",
+          "glue:GetPartitions",
+          "glue:CreatePartition",
+          "glue:DeletePartition",
+          "glue:UpdatePartition"
+        ]
+        Resource = [
+          "arn:aws:glue:${var.aws_region}:${data.aws_caller_identity.current.account_id}:catalog",
+          "arn:aws:glue:${var.aws_region}:${data.aws_caller_identity.current.account_id}:database/${var.project_name}_*",
+          "arn:aws:glue:${var.aws_region}:${data.aws_caller_identity.current.account_id}:table/${var.project_name}_*/*"
+        ]
+      },
+
+      # --- Athena Workgroup ---
+      {
+        Sid    = "AthenaWorkGroupManagement"
+        Effect = "Allow"
+        Action = [
+          "athena:CreateWorkGroup",
+          "athena:GetWorkGroup",
+          "athena:UpdateWorkGroup",
+          "athena:DeleteWorkGroup",
+          "athena:ListWorkGroups",
+          "athena:TagResource",
+          "athena:UntagResource",
+          "athena:ListTagsForResource",
+          "athena:StartQueryExecution",
+          "athena:GetQueryExecution",
+          "athena:GetQueryResults",
+          "athena:StopQueryExecution"
+        ]
+        Resource = [
+          "arn:aws:athena:${var.aws_region}:${data.aws_caller_identity.current.account_id}:workgroup/${var.project_name}-*"
+        ]
       }
     ]
   })

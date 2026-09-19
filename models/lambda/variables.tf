@@ -62,3 +62,10 @@ variable "lambda_descarga_memory" {
   description = "Memoria en MB de la Lambda de descarga"
   type        = number
 }
+
+variable "glue_job_name" {
+  description = "Nombre del AWS Glue Job a disparar tras finalizar la descarga"
+  type        = string
+  default     = ""
+}
+

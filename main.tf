@@ -54,6 +54,7 @@ module "iam" {
   aws_region                   = var.aws_region
   row_bucket_arn               = module.s3.row_bucket_arn
   periodos_faltantes_queue_arn = module.sqs.periodos_faltantes_queue_arn
+  glue_job_arn                 = module.glue.glue_job_arn
 }
 
 module "lambda" {
@@ -72,7 +73,9 @@ module "lambda" {
   lambda_detectora_timeout     = var.lambda_detectora_timeout
   lambda_descarga_timeout      = var.lambda_descarga_timeout
   lambda_descarga_memory       = var.lambda_descarga_memory
+  glue_job_name                = module.glue.glue_job_name
 }
+
 
 module "eventbridge" {
   source = "./models/eventbridge"
@@ -82,3 +85,24 @@ module "eventbridge" {
   lambda_function_name = module.lambda.lambda_detectora_name
   lambda_function_arn  = module.lambda.lambda_detectora_arn
 }
+
+module "athena" {
+  source = "./models/athena"
+
+  project_name        = var.project_name
+  row_bucket_name     = module.s3.row_bucket_name
+  mart_bucket_name    = module.s3.mart_bucket_name
+  staging_bucket_name = module.s3.staging_bucket_name
+}
+
+module "glue" {
+  source = "./models/glue"
+
+  project_name        = var.project_name
+  aws_region          = var.aws_region
+  row_bucket_name     = module.s3.row_bucket_name
+  row_bucket_arn      = module.s3.row_bucket_arn
+  staging_bucket_name = module.s3.staging_bucket_name
+  staging_bucket_arn  = module.s3.staging_bucket_arn
+}
+

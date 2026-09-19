@@ -75,6 +75,12 @@ def periodos_en_s3(formato: str) -> set[tuple[int, int]]:
     return existentes
 
 
+DEFAULT_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+)
+
+
 def existe_en_tlc(formato: str, anio: int, mes: int) -> bool:
     """Confirma con un HEAD request que el archivo ya fue publicado por TLC,
     en vez de parsear el HTML de la pagina (mas fragil ante cambios)."""
@@ -82,11 +88,11 @@ def existe_en_tlc(formato: str, anio: int, mes: int) -> bool:
     req = urllib.request.Request(
         url,
         method="HEAD",
-        headers={"User-Agent": "sirius-tlc-ingesta/1.0"},
+        headers={"User-Agent": DEFAULT_USER_AGENT, "Accept": "*/*"},
     )
     try:
         with urllib.request.urlopen(req, timeout=10) as resp:
-            return resp.status == 200
+            return resp.status in (200, 202)
     except Exception:
         return False
 

@@ -98,6 +98,13 @@ data "aws_iam_policy_document" "descarga" {
     ]
     resources = ["*"]
   }
+
+  statement {
+    sid       = "TriggerGlueJob"
+    actions   = ["glue:StartJobRun"]
+    resources = [var.glue_job_arn]
+  }
+
 }
 
 resource "aws_iam_role_policy" "descarga" {
