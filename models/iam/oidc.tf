@@ -42,10 +42,6 @@ resource "aws_iam_role_policy_attachment" "github_vpc_access" {
 # ==========================================
 # Política de despliegue para Terraform
 # ==========================================
-import {
-  to = aws_iam_policy.sirius_terraform_deploy
-  id = "arn:aws:iam::603437461408:policy/sirius-terraform-deploy-policy"
-}
 
 resource "aws_iam_policy" "sirius_terraform_deploy" {
   name        = "${var.project_name}-terraform-deploy-policy"
