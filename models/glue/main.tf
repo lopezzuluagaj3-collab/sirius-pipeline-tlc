@@ -20,8 +20,8 @@ resource "aws_iam_role" "glue_job" {
 data "aws_iam_policy_document" "glue_job" {
   # Lectura en bucket row (origen)
   statement {
-    sid       = "ReadRowBucket"
-    actions   = ["s3:GetObject", "s3:ListBucket"]
+    sid     = "ReadRowBucket"
+    actions = ["s3:GetObject", "s3:ListBucket"]
     resources = [
       var.row_bucket_arn,
       "${var.row_bucket_arn}/*"
@@ -30,8 +30,8 @@ data "aws_iam_policy_document" "glue_job" {
 
   # Lectura y escritura en bucket staging (destino y scripts)
   statement {
-    sid       = "ReadWriteStagingBucket"
-    actions   = [
+    sid = "ReadWriteStagingBucket"
+    actions = [
       "s3:GetObject",
       "s3:PutObject",
       "s3:DeleteObject",
@@ -45,8 +45,8 @@ data "aws_iam_policy_document" "glue_job" {
 
   # Logs continuos y métricas en CloudWatch
   statement {
-    sid       = "GlueCloudWatchLogsAndMetrics"
-    actions   = [
+    sid = "GlueCloudWatchLogsAndMetrics"
+    actions = [
       "logs:CreateLogGroup",
       "logs:CreateLogStream",
       "logs:PutLogEvents",
