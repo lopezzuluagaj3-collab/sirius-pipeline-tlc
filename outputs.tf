@@ -63,9 +63,15 @@ output "disparo_mensual_rule_arn" {
   value       = module.eventbridge.disparo_mensual_rule_arn
 }
 
-output "github_actions_role_arn" {
-  description = "ARN del rol IAM para GitHub Actions OIDC"
-  value       = module.iam.github_actions_role_arn
+output "powerbi_reader_access_key_id" {
+  description = "Access Key ID para conexion de Power BI a Athena"
+  value       = module.iam.powerbi_reader_access_key_id
+}
+
+output "powerbi_reader_secret_access_key" {
+  description = "Secret Access Key para conexion de Power BI a Athena"
+  value       = module.iam.powerbi_reader_secret_access_key
+  sensitive   = true
 }
 
 output "mart_bucket_name" {

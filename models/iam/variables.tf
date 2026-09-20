@@ -42,3 +42,15 @@ variable "glue_job_arn" {
   default     = ""
 }
 
+variable "mart_bucket_arn" {
+  description = "ARN del bucket mart para lectura de Power BI"
+  type        = string
+  default     = ""
+}
+
+variable "athena_workgroup_arn" {
+  description = "ARN del workgroup de Athena para consultas de Power BI"
+  type        = string
+  default     = ""
+}
+

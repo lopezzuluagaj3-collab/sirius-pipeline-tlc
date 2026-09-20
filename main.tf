@@ -55,6 +55,8 @@ module "iam" {
   row_bucket_arn               = module.s3.row_bucket_arn
   periodos_faltantes_queue_arn = module.sqs.periodos_faltantes_queue_arn
   glue_job_arn                 = module.glue.glue_job_arn
+  mart_bucket_arn              = module.s3.mart_bucket_arn
+  athena_workgroup_arn         = module.athena.workgroup_arn
 }
 
 module "lambda" {
