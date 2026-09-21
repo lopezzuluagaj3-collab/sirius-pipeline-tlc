@@ -100,6 +100,9 @@ Implementado mediante un **AWS Glue Job en PySpark 4.0 (Python 3.10 / Spark 3.3)
 | **FHV (Bases Livery)**| 138 meses (2015 – 2026) | **~810,000,000** | 60 Workers G.1X (4 hilos) | **~15.4 minutos** (926s) | ~875,000 filas/seg |
 | **TOTAL PIPELINE** | **590 Parquets (18 Años)** | **~4,424,000,000 viajes** | **Clúster Dinámico** | **~4.4 horas acumuladas** | **Escala Big Data** |
 
+![Métricas de Ejecución en AWS Glue PySpark](docs/img/glue_job_metrix.png)
+*Evidencia de ejecución exitosa en AWS Glue PySpark 4.0 con workers dinámicos y métricas de DPU.*
+
 ---
 
 ### 3.3 Módulo de Catálogo y Consultas (Athena Staging & Partition Projection)
@@ -107,6 +110,10 @@ En lugar de ejecutar costosos comandos `MSCK REPAIR TABLE` sobre miles de partic
 - Resolución de particiones en memoria sin consultar las APIs de S3.
 - Tiempos de respuesta de consulta en Athena reducidos a **2.0 - 3.4 segundos** escaneando billones de registros.
 - Registro de la tabla dimensional oficial `taxi_zone_lookup` (265 zonas de NYC) mediante `OpenCSVSerde`.
+
+![Rendimiento de Consultas en Amazon Athena](docs/img/captura_respuesta_athena.png)
+*Ejecución analítica en Athena v3: escaneo sub-segundo de Data Marts particionados.*
+
 
 ---
 
@@ -140,6 +147,22 @@ Para conectar Power BI Desktop sin exponer credenciales administrativas:
 - **Mínimo Privilegio (*Least Privilege*):** Permisos de lectura restringidos exclusivamente a `sirius_mart_db` en Glue, ejecución de queries en el Workgroup `sirius-eda`, lectura en `s3://.../mart/*` y escritura temporal en `s3://.../result_eda/*`.
 - Configuración de conexión nativa **ODBC DSN (`sirius_mart`)** en modo **Import** (carga en memoria en menos de 2 segundos).
 - **Límite del Pipeline e Ingesta Analítica:** En concordancia con los límites de responsabilidad del Data Engineer, el pipeline concluye al materializar los Data Marts. La actualización en Power BI se diseñó bajo demanda (botón de refresco manual o programado en Power BI Service), evaluándose disparadores por REST API pero descartándose para evitar dependencias innecesarias y refrescos redundantes.
+
+#### 📊 Dashboards Ejecutivos en Power BI
+> 📖 *Documentación técnica completa, diccionario de métricas y código DAX disponible en el [Manual Técnico de Power BI](powerbi/manual_powerbi.md).*
+
+##### 📄 Página 1: Visión Ejecutiva y Cuota de Mercado (2009 - 2026)
+![Página 1: Visión Ejecutiva y Cuota de Mercado](powerbi/screenshots/dashboard_1.png)
+*Evolución histórica de 4.42B de viajes, disrupción de apps de movilidad (>80% cuota en 2023-2026) y colapso por COVID-19 en abril de 2020.*
+
+##### 📄 Página 2: KPIs Financieros y Rendimiento Económico
+![Página 2: KPIs Financieros y Rendimiento Económico](powerbi/screenshots/dashboard_2.png)
+*Facturación bruta (\$84.2B USD), tarifa base promedio (\$18.45 USD), tasa de propina (16.8%) y compensación media por viaje a conductores ($14.20 USD).*
+
+##### 📄 Página 3: Dinámica Espacio-Temporal y Demanda Horaria
+![Página 3: Dinámica Espacio-Temporal y Demanda Horaria](powerbi/screenshots/dashboard_3.png)
+*Matriz de viajes origen-destino entre distritos y curva horaria interactiva con filtros desplegables de día de la semana y servicio (revelando picos laborales vs nocturnos).*
+
 
 ---
 
@@ -324,7 +347,27 @@ terraform apply -auto-approve
 
 ---
 
+## 📸 8. Trazabilidad y Catálogo de Evidencias de Arquitectura
+
+Para garantizar máxima transparencia y reproducibilidad técnica, todas las capturas de pantalla de la infraestructura AWS y de los dashboards están versionadas y catalogadas en el repositorio:
+
+| Archivo de Captura | Ubicación en el Repositorio | Componente Tecnológico | Qué Demuestra Técnicamente |
+| :--- | :--- | :--- | :--- |
+| `dashboard_1.png` | [`powerbi/screenshots/`](powerbi/screenshots/dashboard_1.png) | Power BI Desktop | Visión ejecutiva, cuota de mercado FHV vs Yellow y shock de COVID-19. |
+| `dashboard_2.png` | [`powerbi/screenshots/`](powerbi/screenshots/dashboard_2.png) | Power BI Desktop | KPIs financieros, tarifas por viaje y milla, ingresos de conductores. |
+| `dashboard_3.png` | [`powerbi/screenshots/`](powerbi/screenshots/dashboard_3.png) | Power BI Desktop | Matriz territorial origen-destino y curva horaria interactiva 24h. |
+| `captura_query_athena.png` | [`docs/img/`](docs/img/captura_query_athena.png) | Amazon Athena Engine v3 | Sentencia SQL analítica contra las tablas `sirius_mart_db`. |
+| `captura_respuesta_athena.png` | [`docs/img/`](docs/img/captura_respuesta_athena.png) | Amazon Athena & FinOps | Ejecución en **~1.2s** escaneando solo **~15-45 MB** (ahorro >99% vs raw). |
+| `glue_categoriry_db.png` | [`docs/img/`](docs/img/glue_categoriry_db.png) | AWS Glue Data Catalog | Catálogo de bases de datos `sirius_raw_db`, `sirius_silver_db`, `sirius_mart_db`. |
+| `glue_categority_table.png` | [`docs/img/`](docs/img/glue_categority_table.png) | AWS Glue Data Catalog | Esquema tipado, compresión Snappy y particionamiento (`anio`, `mes`). |
+| `glue_job_metrix.png` | [`docs/img/`](docs/img/glue_job_metrix.png) | AWS Glue PySpark 4.0 | Historial de ejecuciones con status **Succeeded** y consumo de DPUs. |
+| `s3_bukets.png` | [`docs/img/`](docs/img/s3_bukets.png) | Amazon S3 Lakehouse | Arquitectura Medallion de buckets (`bronze`, `silver`, `gold`). |
+| `model_view.png` | [`docs/img/`](docs/img/model_view.png) | Power BI VertiPaq | Diagrama relacional del modelo semántico y catálogo de medidas DAX. |
+
+---
+
 ## 👨‍💻 Autor
 **Juan López Zuluaga**  
 Estudiante de Ingeniería de Datos | Medellín, Colombia  
 *Especialización en Arquitecturas Cloud Data Lakehouse, Apache Spark, Terraform y FinOps.*
+
