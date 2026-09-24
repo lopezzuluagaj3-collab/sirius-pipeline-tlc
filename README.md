@@ -233,10 +233,10 @@ El pipeline de GitHub Actions ([.github/workflows/deploy.yml](.github/workflows/
 }
 ```
 
-3. **Bucket S3 para el Backend Remoto de Terraform:**
-   - Nombre: `sirius-tfstate-TU_ACCOUNT_ID`
-   - Configuración: Cifrado SSE-S3, Versionado habilitado, Bloqueo de acceso público total (*Block all public access*).
-   - Política de Bucket para aislar el acceso exclusivamente al rol de Terraform:
+3. **Backend Remoto de Terraform (S3 Storage + DynamoDB State Locking):**
+   - **S3 Bucket:** `sirius-tfstate-TU_ACCOUNT_ID` con cifrado KMS/SSE-S3, versionado activado (para recuperación ante corrupción del estado) y bloqueo de acceso público total (*Block all public access*).
+   - **Tabla DynamoDB para State Locking:** `sirius-terraform-locks` con clave primaria `LockID` (String) para mitigar condiciones de carrera (*Race Conditions*) y bloquear ejecuciones concurrentes entre pipelines o ingenieros.
+   - **Política de Bucket S3:** Aislamiento estricto para permitir lectura/escritura exclusivamente al rol federado OIDC `terraform-sirius`:
 ```json
 {
   "Version": "2012-10-17",
@@ -344,6 +344,7 @@ terraform apply -auto-approve
 | **Separación Disaster Recovery vs Incremental** | Script monolítico de recreación continua | Si llega 1 mes nuevo, recalcular 18 años históricos desperdicia presupuesto y tiempo. Se crearon scripts separados: uno para recuperación ante desastres (`materializar_marts.py`) y otro para inserción incremental mensual (`incremental_marts.py`). |
 | **Refresco de Power BI Bajo Demanda** | Webhooks automatizados vía Power BI REST API | El pipeline de ingeniería de datos concluye en la materialización de los Marts. Automatizar el refresco de BI agrega complejidad de tokens de Azure AD y riesgo de ejecuciones redundantes sin valor agregado tangible. |
 | **IAM Least Privilege para BI** | Uso de llaves de Administrador | Aislar al usuario `powerbi-reader` a lectura exclusiva de la capa Mart y Athena Workgroup garantiza que una brecha en la estación de trabajo de BI nunca comprometa la infraestructura de la nube. |
+| **Almacenamiento Columnar Parquet (Snappy)** | Formatos orientados a filas (CSV / JSON) | Athena factura \$5 USD por cada TB escaneado. Con Parquet columnar, el motor solo lee físicamente los bloques de disco de las columnas solicitadas en la consulta (Columnar Projection) y omite particiones no deseadas (Partition Pruning), reduciendo el costo de consulta en más de un 95%. |
 
 ---
 
@@ -367,7 +368,8 @@ Para garantizar máxima transparencia y reproducibilidad técnica, todas las cap
 ---
 
 ## 👨‍💻 Autor
-**Juan López Zuluaga**  
-Estudiante de Ingeniería de Datos | Medellín, Colombia  
-*Especialización en Arquitecturas Cloud Data Lakehouse, Apache Spark, Terraform y FinOps.*
+**Juan Diego López Zuluaga**  
+DevOps & Cloud Infrastructure Engineer | Medellín, Colombia  
+*Especialización en Arquitecturas Cloud Data Lakehouse, Apache Spark, Terraform, Kubernetes, DevSecOps y FinOps.*
+
 
